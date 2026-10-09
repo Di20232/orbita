@@ -53,9 +53,11 @@ void main() {
   // Focal length in full-frame pixels (exact under setViewOffset tiling).
   float fpx = projectionMatrix[1][1] * 0.5 * uViewportH;
 
-  // A star is a PSF, not a disc: σ is the optics' blur in 1080p pixels,
-  // widened only when the star is close enough to be resolved.
-  float sigmaRef = 0.75 * uResScale;
+  // A star is a PSF, not a disc. Its width grows sub-linearly with output
+  // resolution (σ ≈ 0.75 px at 1080p, ≈ 1.2 px at 8K), so high-resolution
+  // captures gain real detail instead of being an upscaled 1080p frame;
+  // the peak formula below keeps each star's total energy unchanged.
+  float sigmaRef = 0.75 * pow(uResScale, 0.35);
   float sigma = max(length(vec2(sigmaRef, aProps.x * fpx / d)), 0.6);
   float flux = uFluxK * aProps.y * fade / (d * d + 36.0) * smoothstep(0.3, 2.0, d);
   // Peak in resolution-independent units: total energy is conserved, so

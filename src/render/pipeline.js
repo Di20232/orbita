@@ -56,7 +56,7 @@ export class Pipeline {
     this.blackHole = new BlackHolePass(camera);
     this.snapBefore = new SnapshotPass();
     this.godRays = new GodRaysPass(camera);
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.45, 0.4, BLOOM_THRESHOLD);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.32, 0.3, BLOOM_THRESHOLD);
     this.bloom.highPassUniforms.smoothWidth.value = 0.4;
     this.snapAfter = new SnapshotPass();
     this.lowFreq = createLowFreqAddPass();

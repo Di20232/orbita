@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { FULLSCREEN_VERT } from './VolumePass.js';
 
@@ -112,6 +113,8 @@ export class SnapshotPass extends ShaderPass {
     this.needsSwap = false;
     this.target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false });
     this.enabled = false;
+    // Own quad: ShaderPass's internal one is private API.
+    this.copyQuad = new FullScreenQuad(this.material);
   }
 
   // Only follows the composer while recording, so a stored snapshot keeps
@@ -123,7 +126,7 @@ export class SnapshotPass extends ShaderPass {
   render(renderer, writeBuffer, readBuffer) {
     this.uniforms.tDiffuse.value = readBuffer.texture;
     renderer.setRenderTarget(this.target);
-    this.fsQuad.render(renderer);
+    this.copyQuad.render(renderer);
   }
 }
 

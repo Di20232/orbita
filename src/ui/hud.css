@@ -248,12 +248,13 @@ body.cursor-hidden {
   margin-bottom: 14px;
 }
 
-.hud__toggle {
+.hud .hud__toggle {
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  border-radius: 10px !important;
+  border-radius: 10px;
+  padding: 0 10px;
 }
 
 .hud__toggle .switch {
@@ -286,8 +287,12 @@ body.cursor-hidden {
   transform: translateX(12px);
 }
 
-.hud__toggle[aria-checked='true'] {
-  background: transparent !important;
+.hud .hud__toggle[aria-checked='true'] {
+  background: transparent;
+}
+
+.hud .hud__toggle:hover {
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .hud__mobile-only {
@@ -354,6 +359,11 @@ body.cursor-hidden {
   place-items: center;
   background: rgba(0, 0, 0, 0.45);
   pointer-events: auto;
+}
+
+.hud__popover > button:last-child {
+  margin-top: 4px;
+  color: var(--muted);
 }
 
 .hud__dialog .panel {

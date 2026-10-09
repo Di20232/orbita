@@ -122,9 +122,11 @@ void main() {
   float Rtrace = 20.0 * Rs;
   float Rweak = 160.0 * Rs;
   float Dl = length(ro);
-  // Thin-lens source plane: what sits behind the hole is mostly the bulge,
-  // ~10 su deep, so the lensing scale stays put as the camera pulls away.
-  float Dls = clamp(Dl, 4.0, 12.0);
+  // Thin-lens source plane. What sits behind the hole is the bulge, ~12 su
+  // deep; the hole is exaggerated for the close-up, so its lensing is eased
+  // out with distance (Einstein radius ∝ √Dls) instead of magnifying the
+  // whole core in mid-distance shots.
+  float Dls = clamp(96.0 / max(Dl, 1.0), 1.5, 12.0);
   float tc = -dot(ro, rd);
   vec3 pc = ro + rd * tc;
   float b = length(pc);
