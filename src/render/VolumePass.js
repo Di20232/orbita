@@ -34,7 +34,7 @@ export class VolumePass extends Pass {
         uCamWorld: { value: new THREE.Matrix4() },
         uCamPos: { value: new THREE.Vector3() },
         uSteps: { value: 48 },
-        uEmission: { value: 1 },
+        uEmission: { value: 0.6 },
         uDustOn: { value: 1 },
         uOctaves: { value: 3 },
         uScatter: { value: 1.5 },

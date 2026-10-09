@@ -97,7 +97,7 @@ export class GodRaysPass extends Pass {
     // Shafts mostly when looking at the core through the disk plane.
     const camPos = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
     const edgeOn = 1 - THREE.MathUtils.smoothstep(Math.abs(camPos.y) / Math.max(camPos.length(), 1e-3), 0.05, 0.4);
-    this.addMat.uniforms.uStrength.value = (0.05 + 0.25 * edgeOn) * THREE.MathUtils.clamp(dist / 15, 0, 1);
+    this.addMat.uniforms.uStrength.value = (0.03 + 0.12 * edgeOn) * THREE.MathUtils.clamp(dist / 15, 0, 1);
     this.brightMat.uniforms.uThreshold.value = threshold;
     this.blurMat.uniforms.uTaps.value = this.taps;
     return true;

@@ -1,4 +1,5 @@
 // GPU mirror of src/galaxy/physics.js — keep the two in sync.
+// Requires noise.glsl prepended.
 
 #define ARMS 2.0
 #define TAU 6.283185307179586
@@ -72,12 +73,20 @@ vec3 diskPosition(vec4 orbit, vec4 vert, vec4 offs) {
   return placeInDisk(R + offs.x, offs.z, phi, y);
 }
 
+// Star formation happens in complexes strung along each arm ("beads on a
+// string"): a fixed pattern-frame noise along ln r for each arm.
+float formationPatch(float R, float arm) {
+  float n = vnoise(vec3(log(max(R, 1.0)) * 10.0, arm * 13.7, 0.5));
+  return 0.12 + 0.88 * smoothstep(0.36, 0.64, n);
+}
+
 // Young OB star or HII-region member, recycled through the spiral shock:
 // born on the birth line (just downstream of the dust lane), it drifts at
 // its own Ω for its lifetime τ, then is reborn on a hashed arm/radius.
 // orbit = (R, seed, w, birthOffset)   vert = (zAmp, zPhase, ν, τ)
-// offs  = (radial, vertical, tangential, t0). Returns age / τ in `life`.
-vec3 recycledPosition(vec4 orbit, vec4 vert, vec4 offs, out float life) {
+// offs  = (radial, vertical, tangential, t0).
+// Returns age / τ in `life` and the star-formation strength in `formation`.
+vec3 recycledPosition(vec4 orbit, vec4 vert, vec4 offs, out float life, out float formation) {
   float tau = vert.w;
   float c = (uTime + offs.w) / tau;
   float cycles = floor(uLoop / tau + 0.5);
@@ -88,8 +97,11 @@ vec3 recycledPosition(vec4 orbit, vec4 vert, vec4 offs, out float life) {
   float hr = hash11(seed * 7.13 + n * 1.618);
   float ha = hash11(seed * 3.71 + n * 2.414 + 11.0);
   float hj = hash11(seed * 5.37 + n * 0.577 + 23.0);
-  float R = max(orbit.x + (hr - 0.5) * 2.0, uArmStart);
-  float phi = armAngle(R, uTime) + orbit.w * upstreamSign(R) + PI * step(0.5, ha) +
+  // Each rebirth lands on a fresh radius within ±3 su: arms get width.
+  float R = max(orbit.x + (hr - 0.5) * 6.0, uArmStart);
+  float arm = step(0.5, ha);
+  formation = formationPatch(R, arm);
+  float phi = armAngle(R, uTime) + orbit.w * upstreamSign(R) + PI * arm +
               (hj - 0.5) * 0.1 + orbit.z * age;
   float y = vert.x * cos(vert.z * uTime + vert.y) + offs.y;
   return placeInDisk(R + offs.x, offs.z, phi, y);

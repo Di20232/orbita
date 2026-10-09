@@ -32,7 +32,9 @@ export const GALAXY = {
   pitchDeg: 15,
   armStartRadius: 7.0,
   armRefRadius: 10.0,
-  armPhase0: 0.0,
+  // Orients the pattern so that at t = 0 a dust lane crosses (40, 0, −12),
+  // the point the flyby's "dust lane" shot threads (see camera/flyby.js).
+  armPhase0: 2.7844,
   corotationRadius: 90.0,
 
   // Visual black hole (cinematically exaggerated; does not affect orbits).

@@ -1,4 +1,4 @@
-// Requires orbit.glsl, noise.glsl and field.glsl prepended.
+// Requires noise.glsl, orbit.glsl and field.glsl prepended.
 attribute vec4 aOrbit;
 attribute vec4 aVert;
 attribute vec4 aOffset;
@@ -36,12 +36,14 @@ void main() {
     pos = sphericalPosition(aOrbit, aOffset, aProps.w, aNode);
   } else if (aVert.w > 0.0) {
     float life;
-    pos = recycledPosition(aOrbit, aVert, aOffset, life);
+    float formation;
+    pos = recycledPosition(aOrbit, aVert, aOffset, life, formation);
     gas = step(0.5, aProps.w);
     // Stars switch on at birth and burn out; ionised gas disperses sooner.
     fade = gas > 0.5
       ? smoothstep(0.0, 0.1, life) * (1.0 - smoothstep(0.4, 0.7, life))
       : smoothstep(0.0, 0.12, life) * (1.0 - smoothstep(0.6, 1.0, life));
+    fade *= formation;
   } else {
     pos = diskPosition(aOrbit, aVert, aOffset);
   }
@@ -55,7 +57,7 @@ void main() {
   // widened only when the star is close enough to be resolved.
   float sigmaRef = 0.75 * uResScale;
   float sigma = max(length(vec2(sigmaRef, aProps.x * fpx / d)), 0.6);
-  float flux = uFluxK * aProps.y * fade / (d * d + 16.0) * smoothstep(0.15, 1.2, d);
+  float flux = uFluxK * aProps.y * fade / (d * d + 36.0) * smoothstep(0.3, 2.0, d);
   // Peak in resolution-independent units: total energy is conserved, so
   // sub-pixel stars dim instead of flickering.
   float sr = sigma / uResScale;

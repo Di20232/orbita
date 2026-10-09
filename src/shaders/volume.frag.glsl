@@ -64,13 +64,14 @@ void main() {
   vec3 T = vec3(1.0);
 
   // Geometric step distribution: dense near the camera (detail while
-  // flying through dust), coarse far away. Jitter uses full-frame pixel
-  // coordinates so tiled captures match the live view.
+  // flying through dust), coarse far away. Jitter is white noise on
+  // full-frame pixel coordinates (tiled captures match the live view;
+  // gradient noise would leave diagonal hatching without TAA).
   float len = t1 - t0;
   float scale = 6.0;
   float logRange = log(1.0 + len / scale);
   vec2 fullPx = uTile.xy + vUv * uTileSize;
-  float jitter = fract(52.9829189 * fract(dot(fullPx, vec2(0.06711056, 0.00583715))));
+  float jitter = hash12(floor(fullPx));
 
   float tPrev = t0;
   for (int i = 0; i < MAX_STEPS; i++) {

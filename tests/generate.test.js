@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { KIND, TOTAL_STARS, generateGalaxy } from '../src/galaxy/generate.js';
+import { KIND, SPIKE_FLAG, TOTAL_STARS, generateGalaxy } from '../src/galaxy/generate.js';
 
 describe('generateGalaxy', () => {
   const g = generateGalaxy();
@@ -17,10 +17,11 @@ describe('generateGalaxy', () => {
   });
 
   it('is deterministic for a given seed', () => {
-    const a = generateGalaxy({ seed: 7, scale: 0.01 });
-    const b = generateGalaxy({ seed: 7, scale: 0.01 });
-    expect(Array.from(a.orbit)).toEqual(Array.from(b.orbit));
-  });
+    const checksum = (a) => a.reduce((acc, v, k) => acc + v * ((k % 7) + 1), 0);
+    const again = generateGalaxy();
+    expect(checksum(again.orbit)).toBe(checksum(g.orbit));
+    expect(checksum(again.color)).toBe(checksum(g.color));
+  }, 30000);
 
   it('keeps the golden core warm and the nurseries blue', () => {
     let bulgeRB = 0;
@@ -31,20 +32,36 @@ describe('generateGalaxy', () => {
       const kind = g.props[i * 4 + 2];
       const r = g.color[i * 3];
       const b = g.color[i * 3 + 2];
+      const gas = g.props[i * 4 + 3] > 0.5;
       if (kind === KIND.BULGE) {
         bulgeRB += r - b;
         bulgeN++;
-      } else if (kind === KIND.NURSERY) {
+      } else if (kind === KIND.NURSERY && !gas) {
         if (b >= r) nurseryBlue++;
         nurseryN++;
       }
     }
     expect(bulgeRB / bulgeN).toBeGreaterThan(0.3);
-    expect(nurseryBlue / nurseryN).toBeGreaterThan(0.7);
+    expect(nurseryBlue / nurseryN).toBeGreaterThan(0.95);
   });
 
-  it('scales down for lower quality tiers', () => {
-    const small = generateGalaxy({ scale: 0.25 });
-    expect(small.count).toBe(80000);
+  it('flags exactly 0.5% of stars for diffraction spikes', () => {
+    let spikes = 0;
+    for (let i = 0; i < g.count; i++) if (g.props[i * 4 + 2] >= SPIKE_FLAG) spikes++;
+    expect(spikes).toBe(1600);
+  });
+
+  it('recycles young stars and nurseries with loop-dividing lifetimes', () => {
+    for (let i = 0; i < g.count; i++) {
+      const kind = g.props[i * 4 + 2] % SPIKE_FLAG;
+      const tau = g.vert[i * 4 + 3];
+      if (kind === KIND.YOUNG || kind === KIND.NURSERY) {
+        expect(tau).toBeGreaterThan(0);
+        const n = 7200 / tau;
+        expect(Math.abs(n - Math.round(n))).toBeLessThan(1e-3);
+      } else {
+        expect(tau).toBe(0);
+      }
+    }
   });
 });

@@ -122,7 +122,9 @@ void main() {
   float Rtrace = 20.0 * Rs;
   float Rweak = 160.0 * Rs;
   float Dl = length(ro);
-  float Dls = clamp(Dl * 0.8, 10.0, 120.0);
+  // Thin-lens source plane: what sits behind the hole is mostly the bulge,
+  // ~10 su deep, so the lensing scale stays put as the camera pulls away.
+  float Dls = clamp(Dl, 4.0, 12.0);
   float tc = -dot(ro, rd);
   vec3 pc = ro + rd * tc;
   float b = length(pc);
@@ -187,7 +189,7 @@ void main() {
     if (!captured) {
       vec3 dirOut = normalize(vel);
       // Weak-field deflection from the stretches outside the traced sphere.
-      float bImp = sqrt(h2);
+      float bImp = max(sqrt(h2), 1e-4);
       float S = sqrt(max(Rtrace * Rtrace - bImp * bImp, 0.0));
       float outer = Rs / bImp * (1.0 - S / Rtrace) * (inside ? 1.0 : 2.0);
       vec3 perp = -(pos - dirOut * dot(pos, dirOut));
@@ -212,5 +214,8 @@ void main() {
     vec3 ext = extinctionColor(dustColumn(uCamPos, vec3(0.0), uDustSamples, 2));
     result = (col + veil) * ext + (1.0 - alpha) * behind;
   }
-  gl_FragColor = vec4(mix(base, result, uFade), 1.0);
+  // Never let a non-finite or half-float-overflowing pixel through: bloom
+  // would smear it across the whole frame. (NaN fails every comparison.)
+  bool finite = all(lessThan(result, vec3(6e4))) && all(greaterThanEqual(result, vec3(0.0)));
+  gl_FragColor = vec4(mix(base, finite ? result : base, uFade), 1.0);
 }

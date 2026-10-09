@@ -56,7 +56,7 @@ export class Pipeline {
     this.blackHole = new BlackHolePass(camera);
     this.snapBefore = new SnapshotPass();
     this.godRays = new GodRaysPass(camera);
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.7, 0.55, BLOOM_THRESHOLD);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.45, 0.4, BLOOM_THRESHOLD);
     this.bloom.highPassUniforms.smoothWidth.value = 0.4;
     this.snapAfter = new SnapshotPass();
     this.lowFreq = createLowFreqAddPass();
@@ -117,8 +117,15 @@ export class Pipeline {
     this.caAmount = q.ca === false ? 0 : 1.6;
   }
 
+  // Resizing clears the drawing buffer, so it is deferred to the start of
+  // the next render: the browser never composites an empty canvas.
   resize(width, height) {
     this.size = { width: Math.max(1, width), height: Math.max(1, height) };
+    this.resizePending = true;
+  }
+
+  applyResize() {
+    this.resizePending = false;
     if (this.capturing) return;
     const r = this.renderer;
     r.setPixelRatio(this.dpr);
@@ -175,7 +182,7 @@ export class Pipeline {
     vu.uTile.value.set(x, y, fullW, fullH);
     vu.uTileSize.value.set(targetW, targetH);
 
-    const exposure = this.baseExposure * this.exposure;
+    const exposure = Math.max(this.baseExposure * this.exposure, 1e-3);
     const threshold = BLOOM_THRESHOLD / exposure;
     this.bloom.threshold = threshold;
     this.bloom.enabled = this.settings.bloom && !tiled;
@@ -203,6 +210,7 @@ export class Pipeline {
   }
 
   render(dtSeconds) {
+    if (this.resizePending) this.applyResize();
     // Letterbox matte eases in/out over 0.7 s.
     const target = this.settings.letterbox ? 1 : 0;
     const step = dtSeconds / 0.7;

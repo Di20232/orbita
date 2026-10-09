@@ -93,8 +93,9 @@ function saturate(rgb) {
   return rgb;
 }
 
-// Apparent radius grows gently with luminosity (resolved only up close).
-const starRadius = (L) => 0.006 * Math.pow(L, 0.35);
+// Optical size grows gently with luminosity; at galactic scales stars stay
+// points, so this only softens the very closest ones.
+const starRadius = (L) => 0.0015 * Math.pow(L, 0.35);
 
 export function generateGalaxy({ seed = 20261008, onProgress } = {}) {
   const rng = createRng(seed);
@@ -157,7 +158,7 @@ export function generateGalaxy({ seed = 20261008, onProgress } = {}) {
       incl: isotropic(),
       node: rng.range(0, Math.PI * 2),
       temp: sStar ? rng.range(18000, 28000) : rng.range(3600, 5200),
-      L: rng.powerLaw(0.4, 6, 2.0) * (sStar ? 1.5 : 1),
+      L: rng.powerLaw(0.4, 6, 2.0) * (sStar ? 0.8 : 0.4),
     });
   }
   progress('nuclear');
@@ -186,7 +187,8 @@ export function generateGalaxy({ seed = 20261008, onProgress } = {}) {
       incl: (rng.range(0, 68) * Math.PI) / 180,
       node: rng.range(0, Math.PI * 2),
       temp: pickTemperature(rng, bulgeTemps),
-      L: rng.powerLaw(0.3, 6, 2.3),
+      // Dimmer per star: 72k of them share a small patch of sky.
+      L: rng.powerLaw(0.3, 6, 2.3) * 0.45,
     });
   }
   progress('bulge');
@@ -208,14 +210,14 @@ export function generateGalaxy({ seed = 20261008, onProgress } = {}) {
     [0.07, 7400, 10000],
   ];
   for (let n = 0; n < POPULATIONS.thinDisk; n++) {
-    const R = diskRadius(25, 3, 125, (r) => smoothstep(3, 12, r) * (r > 100 ? Math.exp(-(((r - 100) / 14) ** 2)) : 1));
+    const R = diskRadius(25, 3, 125, (r) => smoothstep(3, 12, r) * (r > 85 ? Math.exp(-(((r - 85) / 20) ** 2)) : 1));
     const hz = 0.9 * Math.sqrt(1 + (R / 80) ** 2);
     put({
       kind: KIND.DISK,
       R,
       M0: rng.range(-Math.PI, Math.PI) * m,
       w: quantizeFrequency(0.98 * angularVelocity(R)) - PATTERN_SPEED,
-      A: rng.range(0.3, 0.55),
+      A: rng.range(0.35, 0.65),
       zAmp: rng.exponential(1.4 * hz),
       zPhase: rng.range(0, Math.PI * 2),
       nu: verticalFrequency(R, 2.5 * rng.range(0.85, 1.15)),
@@ -266,8 +268,8 @@ export function generateGalaxy({ seed = 20261008, onProgress } = {}) {
       nu: verticalFrequency(R, 3),
       tau,
       t0: rng.range(0, tau),
-      offR: rng.gaussian() * 0.35,
-      offT: rng.gaussian() * 0.35,
+      offR: rng.gaussian() * 1.1,
+      offT: rng.gaussian() * 1.1,
       temp: Math.min(1e4 * Math.pow(M / 2.5, 0.6), 45000),
       L: Math.min(Math.max(1.5 * Math.pow(M / 10, 1.8), 1), 20),
     });
@@ -303,7 +305,7 @@ export function generateGalaxy({ seed = 20261008, onProgress } = {}) {
         rgb: gas ? HALPHA : null,
         temp: rng.range(15000, 40000),
         radius: gas ? sigma * rng.range(0.6, 1.1) : undefined,
-        L: gas ? rng.range(0.6, 2) : rng.powerLaw(1.5, 8, 2),
+        L: gas ? rng.range(8, 20) : rng.powerLaw(1.5, 8, 2),
       });
     }
   }
@@ -365,15 +367,16 @@ export function generateGalaxy({ seed = 20261008, onProgress } = {}) {
   }
   progress('halo');
 
-  // Diffraction spikes for the top 0.5% most luminous stars (not gas).
-  const lum = [];
-  for (let s = 0; s < i; s++) if (data.props[s * 4 + 3] === 0 || data.props[s * 4 + 2] >= KIND.BULGE) lum.push(data.props[s * 4 + 1]);
-  lum.sort((a, b) => b - a);
-  const spikeL = lum[Math.floor(lum.length * 0.005)];
+  // Diffraction spikes for exactly the top 0.5% most luminous stars (gas
+  // puffs excluded). Ranking indices keeps ties from inflating the count.
+  const candidates = [];
   for (let s = 0; s < i; s++) {
     const isGas = data.props[s * 4 + 2] < KIND.BULGE && data.props[s * 4 + 3] > 0.5;
-    if (!isGas && data.props[s * 4 + 1] >= spikeL) data.props[s * 4 + 2] += SPIKE_FLAG;
+    if (!isGas) candidates.push(s);
   }
+  candidates.sort((a, b) => data.props[b * 4 + 1] - data.props[a * 4 + 1] || a - b);
+  const spikes = Math.round(TOTAL_STARS * 0.005);
+  for (let k = 0; k < spikes; k++) data.props[candidates[k] * 4 + 2] += SPIKE_FLAG;
   progress('done');
 
   return data;

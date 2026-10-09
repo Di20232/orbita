@@ -1,6 +1,6 @@
 // Analytic galaxy fields shared by the volume raymarcher (diffuse light and
 // dust), the star shader (per-star extinction) and the black-hole pass.
-// Requires orbit.glsl and noise.glsl. Everything is expressed relative to
+// Requires noise.glsl and orbit.glsl. Everything is expressed relative to
 // the rotating spiral pattern, so lanes stay locked to the stars.
 
 uniform float uDustDensity;
@@ -36,21 +36,20 @@ float dustDensity(vec3 p, int octaves) {
   float da = armOffset(r, phi);
   // Main lane on the concave (upstream) edge of the arm, a fainter
   // secondary lane nearer the crest.
-  float main = (da + 0.30 * s) / 0.08;
+  float main = (da + 0.30 * s) / 0.11;
   float lane = exp(-0.5 * main * main);
   float sec = (da + 0.12 * s) / 0.12;
   lane += 0.4 * exp(-0.5 * sec * sec);
-  // Feathers: short spurs peeling off the lane downstream every Δln r ≈ 0.15.
+  // Feathers: noisy spurs peeling off the lane downstream.
   float down = (da + 0.30 * s) * s;
-  float spurPhase = fract(log(max(r, 1.0)) / 0.15 + down * 2.4);
-  float spur = smoothstep(0.0, 0.03, down) * exp(-down / 0.22) * exp(-pow((spurPhase - 0.5) / 0.08, 2.0));
-  lane += 0.55 * spur;
+  float feather = vnoise(vec3(log(max(r, 1.0)) * 9.0 + down * 3.0, da * 4.0, 3.7));
+  lane += 0.5 * smoothstep(0.0, 0.03, down) * exp(-down / 0.25) * smoothstep(0.55, 0.8, feather);
 
   vec3 q = spiralCoords(r, phi, y);
   float warp = vnoise(q * 0.35) * 2.5;
   float n = fbm(q * 0.55 + vec3(warp, -warp, 0.0), octaves);
   float clump = smoothstep(0.28, 0.75, n);
-  return uDustDensity * radial * vert * (0.25 + 1.6 * lane) * (0.15 + 1.7 * clump);
+  return uDustDensity * radial * vert * (0.12 + 2.4 * lane) * (0.15 + 1.7 * clump);
 }
 
 // Diffuse disk light (unresolved stars + nebular glow), linear RGB.
@@ -60,7 +59,7 @@ vec3 diskEmission(vec3 p) {
   float y = p.y - warpHeight(r, phi);
   float hz = 0.9 * sqrt(1.0 + (r / 80.0) * (r / 80.0));
   float disk = exp(-r / 25.0) * smoothstep(2.0, 10.0, r) * exp(-abs(y) / hz);
-  if (r > 100.0) disk *= exp(-((r - 100.0) / 14.0) * ((r - 100.0) / 14.0));
+  if (r > 85.0) disk *= exp(-((r - 85.0) / 20.0) * ((r - 85.0) / 20.0));
   if (disk < 1e-5) return vec3(0.0);
 
   float taper = armTaper(r);
@@ -69,8 +68,9 @@ vec3 diskEmission(vec3 p) {
   float old = crowd(2.0 * da, 0.45 * taper);
   // OB light: born on the birth line, drifting downstream as it fades.
   float down = (da + 0.22 * s) * s;
-  float young = smoothstep(-0.04, 0.03, down) * exp(-max(down, 0.0) / 0.32) * taper;
-  vec3 col = disk * (vec3(1.0, 0.82, 0.62) * 0.3 * old + vec3(0.45, 0.62, 1.0) * 0.9 * young);
+  float arm = mod(floor((phi - armAngle(r, uTime)) / PI + 0.5), 2.0);
+  float young = smoothstep(-0.04, 0.03, down) * exp(-max(down, 0.0) / 0.32) * taper * formationPatch(r, arm);
+  vec3 col = disk * (vec3(1.0, 0.82, 0.62) * 0.45 * old + vec3(0.45, 0.62, 1.0) * 1.2 * young);
 
   // HII haze: clumpy blue/pink knots just downstream of the dust lane.
   float hii = young * exp(-abs(y) / 0.4);

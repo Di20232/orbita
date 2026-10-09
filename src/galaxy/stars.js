@@ -22,7 +22,7 @@ export function createStars(data) {
       ...galaxyUniforms,
       uViewportH: { value: 1080 },
       uResScale: { value: 1 },
-      uFluxK: { value: 2400 },
+      uFluxK: { value: 14000 },
       uMaxSprite: { value: 64 },
       uExtinction: { value: 1 },
       uDustSamples: { value: 5 },

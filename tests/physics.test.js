@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
   GALAXY,
+  LOOP_PERIOD,
+  OMEGA0,
   PATTERN_SPEED,
   angularVelocity,
   armAngle,
   armPhase,
+  armFeaturePoint,
   circularVelocity,
   diskStarPosition,
+  quantizePeriod,
+  relativeAngularVelocity,
+  verticalFrequency,
 } from '../src/galaxy/physics.js';
 
 describe('rotation curve', () => {
@@ -21,8 +27,8 @@ describe('rotation curve', () => {
     expect(angularVelocity(0.5)).toBeGreaterThan(angularVelocity(2) * 3);
   });
 
-  it('places corotation at the configured radius', () => {
-    expect(angularVelocity(GALAXY.corotationRadius)).toBeCloseTo(PATTERN_SPEED, 10);
+  it('places corotation at the configured radius (within the loop quantum)', () => {
+    expect(Math.abs(angularVelocity(GALAXY.corotationRadius) - PATTERN_SPEED)).toBeLessThanOrEqual(OMEGA0 / 2);
   });
 });
 
@@ -80,5 +86,44 @@ describe('density wave', () => {
     // right-handed frame, i.e. (p0 × p1)·ŷ > 0.
     const cross = z0 * x1 - x0 * z1;
     expect(cross).toBeGreaterThan(0);
+  });
+});
+
+describe('loop periodicity', () => {
+  it('quantises every frequency to multiples of 2π / LOOP_PERIOD', () => {
+    for (const w of [PATTERN_SPEED, relativeAngularVelocity(13.7), verticalFrequency(42.1)]) {
+      const k = w / OMEGA0;
+      expect(Math.abs(k - Math.round(k))).toBeLessThan(1e-6);
+    }
+    expect(LOOP_PERIOD / quantizePeriod(37.3)).toBeCloseTo(Math.round(LOOP_PERIOD / quantizePeriod(37.3)), 9);
+  });
+
+  it('returns every disk star to the same place after one loop', () => {
+    const star = { R: 23.4, M0: 0.7, A: 0.4, zAmp: 0.8, zPhase: 1.1, nu: verticalFrequency(23.4), offR: 0.3, offT: -0.2 };
+    const a = diskStarPosition(star, 123.4);
+    const b = diskStarPosition(star, 123.4 + LOOP_PERIOD);
+    for (let k = 0; k < 3; k++) expect(b[k]).toBeCloseTo(a[k], 6);
+  });
+});
+
+describe('arm features', () => {
+  it('puts the dust lane upstream (behind) of the arm crest inside corotation', () => {
+    const R = 40;
+    const crest = armFeaturePoint(R, 0, 0);
+    const lane = armFeaturePoint(R, 0, -0.3);
+    const angle = (p) => Math.atan2(-p[2], p[0]);
+    let d = angle(lane) - angle(crest);
+    d -= 2 * Math.PI * Math.round(d / (2 * Math.PI));
+    // Stars inside corotation rotate faster than the pattern (toward +φ),
+    // so upstream is the −φ side.
+    expect(d).toBeLessThan(0);
+  });
+
+  it('orients a dust lane through the flyby dust-lane shot at t = 0', () => {
+    const R = Math.hypot(40, 12);
+    const lane = armFeaturePoint(R, 0, -0.3);
+    const other = armFeaturePoint(R, 0, -0.3, 1);
+    const miss = Math.min(Math.hypot(lane[0] - 40, lane[2] + 12), Math.hypot(other[0] - 40, other[2] + 12));
+    expect(miss).toBeLessThan(0.05);
   });
 });
