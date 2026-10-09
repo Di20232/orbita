@@ -36,7 +36,10 @@
 
 .hud.is-idle .hud__dock,
 .hud.is-idle .hud__resume,
-.hud.is-idle .hud__stats {
+.hud.is-idle .hud__stats,
+.hud.is-idle button,
+.hud.is-idle input {
+  /* An invisible control must never catch the tap that wakes the HUD. */
   pointer-events: none;
 }
 

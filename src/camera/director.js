@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { Flyby, R_SAFE, createPose, pushOutside } from './flyby.js';
+import { Flyby, R_SAFE, createPose } from './flyby.js';
 
 const smootherstep = (x) => {
   const t = THREE.MathUtils.clamp(x, 0, 1);
@@ -45,13 +45,27 @@ export class Director extends EventTarget {
     controls.minDistance = R_SAFE;
     controls.maxDistance = 450;
     controls.enabled = true;
+    // A press only arms the controls around the current look-at point; the
+    // switch to free mode happens on actual movement, so a tap (e.g. to wake
+    // the HUD) never interrupts the flight.
+    let pressed = false;
     controls.addEventListener('start', () => {
+      pressed = true;
+      if (this.mode !== 'free') controls.target.copy(this.pose.target);
+      this.lastInteraction = performance.now();
+    });
+    controls.addEventListener('change', () => {
+      if (!pressed) return;
       if (this.mode !== 'free') this.toFree();
       this.lastInteraction = performance.now();
+    });
+    controls.addEventListener('end', () => {
+      pressed = false;
     });
     this.controls = controls;
     this.lastInteraction = performance.now();
     this.freeFovFrom = null;
+    this.freeBank = 0;
     this.freeT = 0;
     this.focusAnim = null;
   }
@@ -66,10 +80,11 @@ export class Director extends EventTarget {
 
   toFree() {
     this.mode = 'free';
-    this.blend = null;
     this.controls.target.copy(this.pose.target);
     this.freeFovFrom = this.camera.fov;
-    this.freeUpFrom = this.camera.up.clone();
+    // OrbitControls levels the horizon at once; ease the flyby's bank out.
+    this.freeBank = this.blend ? 0 : this.pose.bank;
+    this.blend = null;
     this.freeT = 0;
     this.dispatchEvent(new CustomEvent('mode', { detail: 'free' }));
   }
@@ -157,10 +172,7 @@ export class Director extends EventTarget {
       }
     } else {
       this.freeT += dt;
-      // Level the horizon over 0.4 s and ease the lens to 50° over 1.5 s.
-      if (this.freeUpFrom) {
-        cam.up.copy(this.freeUpFrom).lerp(UP, smootherstep(this.freeT / 0.4)).normalize();
-      }
+      // Ease the lens to 50° over 1.5 s.
       if (this.freeFovFrom !== null) cam.fov = THREE.MathUtils.lerp(this.freeFovFrom, 50, smootherstep(this.freeT / 1.5));
       if (this.focusAnim) {
         const f = this.focusAnim;
@@ -169,7 +181,13 @@ export class Director extends EventTarget {
         if (f.t >= 1) this.focusAnim = null;
       }
       this.controls.update();
-      pushOutside(cam.position);
+      // Hard clamp (the flyby's smooth push-out would accumulate frame after
+      // frame here, since OrbitControls reads the position back).
+      if (cam.position.length() < R_SAFE) cam.position.setLength(R_SAFE);
+      // Level the horizon over 0.4 s: re-apply the remaining bank on top of
+      // the level orientation OrbitControls just set.
+      const bankLeft = this.freeBank * (1 - smootherstep(this.freeT / 0.4));
+      if (bankLeft) cam.rotateZ(bankLeft);
       this.pose.position.copy(cam.position);
       this.pose.target.copy(this.controls.target);
     }
@@ -193,7 +211,8 @@ export class Director extends EventTarget {
     const fwd = cam.getWorldDirection(_fwd);
     const toCore = _a.copy(cam.position).negate().normalize();
     const looking = THREE.MathUtils.smoothstep(fwd.dot(toCore), 0.3, 0.95);
-    const weight = THREE.MathUtils.lerp(looking, 1, THREE.MathUtils.smoothstep(dist, 30, 10) ** 0.5);
+    const inside = 1 - THREE.MathUtils.smoothstep(dist, 10, 30); // three's order: (x, min, max)
+    const weight = THREE.MathUtils.lerp(looking, 1, Math.sqrt(inside));
     const target = THREE.MathUtils.clamp(-2.2 * Math.log2(1 + (24 / dist) ** 2) * weight, -4.8, 0.5);
     const slow = this.reducedMotion ? 2 : 1;
     const tau = (target < this.exposureEV ? 1.2 : 2.5) * slow;

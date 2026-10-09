@@ -34,10 +34,10 @@ varying vec2 vUv;
 
 vec3 blackbody(float kelvin) {
   float t = clamp(kelvin, 1000.0, 40000.0) / 100.0;
-  float r = t <= 66.0 ? 1.0 : clamp(1.29293618606 * pow(t - 60.0, -0.1332047592), 0.0, 1.0);
+  float r = t <= 66.0 ? 1.0 : clamp(1.29293618606 * pow(max(t - 60.0, 1e-3), -0.1332047592), 0.0, 1.0);
   float g = t <= 66.0
     ? clamp(0.39008157876 * log(t) - 0.63184144378, 0.0, 1.0)
-    : clamp(1.12989086089 * pow(t - 60.0, -0.0755148492), 0.0, 1.0);
+    : clamp(1.12989086089 * pow(max(t - 60.0, 1e-3), -0.0755148492), 0.0, 1.0);
   float b = t >= 66.0 ? 1.0 : (t <= 19.0 ? 0.0 : clamp(0.54320678911 * log(t - 10.0) - 1.19625408914, 0.0, 1.0));
   return pow(vec3(r, g, b), vec3(2.2));
 }
@@ -54,7 +54,9 @@ vec3 sampleScene(vec3 pointWorld) {
   if (uTiled > 0.5 && all(greaterThan(uvFull, vec2(0.0))) && all(lessThan(uvFull, vec2(1.0)))) {
     return texture2D(tFallback, uvFull).rgb;
   }
-  // Off-screen: stretch the edge, dimmed.
+  // Off-screen: stretch the frame's edge, dimmed (the full frame's edge
+  // when tiling, so every tile agrees).
+  if (uTiled > 0.5) return texture2D(tFallback, clamp(uvFull, vec2(0.001), vec2(0.999))).rgb * 0.45;
   return texture2D(tDiffuse, clamp(uv, vec2(0.001), vec2(0.999))).rgb * 0.45;
 }
 
@@ -129,22 +131,30 @@ void main() {
   float Dls = clamp(96.0 / max(Dl, 1.0), 1.5, 12.0);
   float tc = -dot(ro, rd);
   vec3 pc = ro + rd * tc;
-  float b = length(pc);
+  float b = max(length(pc), 1e-4);
   bool inside = Dl < Rtrace;
 
-  if (b > Rweak || (tc < -Rtrace && !inside)) {
+  // Beyond Rweak the deflection is negligible. (Rays heading away from the
+  // hole fade out smoothly through the weak-field formula below.)
+  if (b > Rweak) {
     gl_FragColor = vec4(base, 1.0);
     return;
   }
 
   vec3 result;
-  if (b > Rtrace && !inside) {
+  // Weak field for distant rays and for rays heading away from the hole
+  // (closest approach behind the camera) when the camera is outside the
+  // traced sphere.
+  if (!inside && (b > Rtrace || tc < 0.0)) {
     // Weak field: deflection accumulated along the part of the ray ahead
     // of the camera, Rs/b·(1 + tc/√(b²+tc²)) → 2Rs/b far behind the lens.
     float fall = 1.0 - smoothstep(0.5 * Rweak, Rweak, b);
     float a = Rs / b * (1.0 + tc / sqrt(b * b + tc * tc)) * fall * uFade;
     vec3 dirOut = bend(rd, -pc / b, a);
-    result = sampleScene(toWorld(pc + dirOut * Dls));
+    // The closest approach is behind the camera for rays heading away from
+    // the hole: anchor the source plane at the camera instead.
+    vec3 lensPoint = tc > 0.0 ? pc : ro;
+    result = sampleScene(toWorld(lensPoint + dirOut * Dls));
   } else {
     // Strong field: integrate the photon path inside the trace sphere.
     float tStart = 0.0;
@@ -205,7 +215,8 @@ void main() {
     float bImp0 = length(cross(ro, rd));
     float pxSize = max(Dl, 1.0) / uFocalPx;
     float w = max(0.04 * Rs, pxSize);
-    float ring = exp(-0.5 * pow((bImp0 - 2.598 * Rs) / w, 2.0)) * (0.02 * Rs / w);
+    float z = (bImp0 - 2.598 * Rs) / w; // pow() of a negative base is undefined
+    float ring = exp(-0.5 * z * z) * (0.02 * Rs / w) * step(0.0, tc);
     vec3 side = vec3(pc.z, 0.0, -pc.x);
     float approach = 1.0 + 0.6 * dot(normalize(side + 1e-6), -rd);
     col += ring * uRingGain * approach * vec3(1.0, 0.8, 0.55);

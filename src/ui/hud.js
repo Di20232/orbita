@@ -184,6 +184,13 @@ export class Hud {
     window.addEventListener('wheel', wake, { passive: true });
     window.addEventListener('keydown', (e) => this.onKey(e));
     this.root.addEventListener('focusin', wake);
+    // Drop focus left behind by mouse clicks so Space doesn't re-press the
+    // last button and the HUD can still fade out.
+    this.root.addEventListener('click', (e) => {
+      const button = e.target.closest?.('button');
+      if (button && e.detail > 0) button.blur();
+    });
+    this.slider.addEventListener('change', () => this.slider.blur());
   }
 
   activity() {
@@ -193,7 +200,9 @@ export class Hud {
   // Called every frame.
   tick(now) {
     const popoverOpen = !this.popover.hidden || !this.dialog.hidden;
-    const focusInside = this.root.contains(document.activeElement) && document.activeElement !== document.body;
+    // Only keyboard focus keeps the HUD awake (a mouse click also focuses).
+    const active = document.activeElement;
+    const focusInside = !!active && active !== document.body && this.root.contains(active) && active.matches(':focus-visible');
     const keepAwake = this.hovering || popoverOpen || focusInside || this.capturing || now < this.pinnedUntil;
     const idle = this.hiddenByUser || (!keepAwake && now - this.lastActivity > 3000);
     this.root.classList.toggle('is-idle', idle);
@@ -333,8 +342,11 @@ export class Hud {
   }
 
   onKey(e) {
-    const tag = document.activeElement?.tagName;
-    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.ctrlKey || e.metaKey || e.altKey) return;
+    const el = document.activeElement;
+    const typing = el && (el.tagName === 'SELECT' || el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && el.type !== 'range'));
+    // AltGr arrives as Ctrl+Alt on Windows; ABNT2 needs it for '?' on some laptops.
+    const altGr = e.getModifierState?.('AltGraph');
+    if (typing || ((e.ctrlKey || e.metaKey || e.altKey) && !altGr)) return;
     const a = this.actions;
     const key = e.key;
     let handled = true;

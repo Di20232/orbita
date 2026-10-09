@@ -5,22 +5,25 @@ import { createSky, createStars } from './galaxy/stars.js';
 import { LOOP_PERIOD } from './galaxy/physics.js';
 import { Pipeline, QUALITY } from './render/pipeline.js';
 import { Director } from './camera/director.js';
+import { createPose } from './camera/flyby.js';
 import { Hud, TIME_STEPS } from './ui/hud.js';
 
-const PREFS_KEY = 'orbita.prefs.v1';
+// Only explicit user choices are stored. OS settings (reduced motion) and
+// URL parameters apply to the current visit without being persisted.
+const PREFS_KEY = 'orbita.prefs.v2';
 
-function loadPrefs(defaults) {
+function loadStored() {
   try {
-    const saved = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
-    return { ...defaults, ...saved };
+    const value = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
+    return value && typeof value === 'object' ? value : {};
   } catch {
-    return { ...defaults };
+    return {};
   }
 }
 
-function savePrefs(prefs) {
+function saveStored(stored) {
   try {
-    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+    localStorage.setItem(PREFS_KEY, JSON.stringify(stored));
   } catch {
     // Private mode or storage disabled: preferences just won't persist.
   }
@@ -49,19 +52,25 @@ export async function startApp({ ui, caps }) {
   const params = new URLSearchParams(location.search);
   const reducedMQ = window.matchMedia('(prefers-reduced-motion: reduce)');
   const coarse = window.matchMedia('(pointer: coarse)').matches;
-  const prefs = loadPrefs({
-    quality: caps.halfFloat ? (coarse ? 'media' : 'alta') : 'baixa',
+  const defaults = {
+    quality: coarse ? 'media' : 'alta',
     dust: true,
     bloom: true,
     lens: true,
     letterbox: false,
     captions: true,
-    reducedMotion: reducedMQ.matches,
     hintShown: false,
-  });
-  if (!caps.halfFloat) prefs.quality = 'baixa';
+  };
+  const stored = loadStored();
+  const remember = (key, value) => {
+    stored[key] = value;
+    saveStored(stored);
+  };
+  const prefs = { ...defaults, ...stored };
+  if (!QUALITY[prefs.quality]) prefs.quality = defaults.quality;
+  prefs.reducedMotion = typeof stored.reducedMotion === 'boolean' ? stored.reducedMotion : reducedMQ.matches;
+  // Shareable/testable overrides for this visit, e.g. ?quality=ultra&dust=0.
   if (params.has('quality') && QUALITY[params.get('quality')]) prefs.quality = params.get('quality');
-  // Shareable/testable overrides, e.g. ?dust=0&letterbox=1.
   for (const key of ['dust', 'bloom', 'lens', 'letterbox', 'captions']) {
     if (params.has(key)) prefs[key] = params.get(key) === '1';
   }
@@ -143,6 +152,7 @@ export async function startApp({ ui, caps }) {
       actions.setTimeScale(TIME_STEPS[i]);
     },
     setMode(mode) {
+      if (pipeline.capturing) return;
       if (mode === 'free') director.toFree();
       else director.toCinematic(clock.sim % LOOP_PERIOD);
     },
@@ -150,15 +160,18 @@ export async function startApp({ ui, caps }) {
       actions.setMode(director.mode === 'free' ? 'cinematic' : 'free');
     },
     setQuality(key) {
+      if (pipeline.capturing) return;
       prefs.quality = key;
-      savePrefs(prefs);
+      remember('quality', key);
       pipeline.setQuality(key);
       hud.setQuality(key);
       hud.announce(`Qualidade ${QUALITY[key].label}`);
     },
     toggle(key) {
+      // Changing effects mid-capture would make tiles disagree.
+      if (pipeline.capturing && key !== 'captions') return;
       prefs[key] = !prefs[key];
-      savePrefs(prefs);
+      remember(key, prefs[key]);
       hud.setToggle(key, prefs[key]);
       if (key in pipeline.settings) pipeline.settings[key] = prefs[key];
       if (key === 'reducedMotion') director.setReducedMotion(prefs[key]);
@@ -168,7 +181,7 @@ export async function startApp({ ui, caps }) {
       else document.documentElement.requestFullscreen?.().catch(() => {});
     },
     restart() {
-      director.restart();
+      if (!pipeline.capturing) director.restart();
     },
     capture: () => runCapture({}),
     cancelCapture() {
@@ -192,11 +205,20 @@ export async function startApp({ ui, caps }) {
     if (width === 7680 && isIOS()) {
       ({ width, height, cols, rows } = { width: 3840, height: 2160, cols: 2, rows: 2 });
     }
+    const label = width >= 7680 ? '8K' : '4K';
+    // Frame the capture's own aspect: the flyby's lens for that aspect, or
+    // the free camera's vertical field of view.
+    let fov = camera.fov;
+    if (director.mode === 'cinematic') {
+      const probe = director.flyby.evaluate(director.flyTime, clock.sim % LOOP_PERIOD, width / height, createPose());
+      fov = probe.fov;
+    }
     capture = new AbortController();
+    director.controls.enabled = false;
     hud.setCapture('running', 0);
     try {
-      const blob = await pipeline.capture({ width, height, cols, rows, signal: capture.signal, onProgress: (f) => hud.setCapture('running', f) });
-      download(blob, `orbita-${width >= 7680 ? '8k' : '4k'}-${timestamp()}.png`);
+      const blob = await pipeline.capture({ width, height, cols, rows, fov, signal: capture.signal, onProgress: (f) => hud.setCapture('running', f) });
+      download(blob, `orbita-${label.toLowerCase()}-${timestamp()}.png`);
       hud.setCapture('done');
       hud.announce('Imagem salva');
     } catch (err) {
@@ -205,13 +227,16 @@ export async function startApp({ ui, caps }) {
         hud.toast('Captura cancelada', { duration: 2000 });
       } else {
         console.error(err);
-        hud.toast('Não foi possível capturar em 8K — tente 4K', {
+        const retry = width > 3840;
+        hud.toast(retry ? 'Não foi possível capturar em 8K — tente 4K' : `Não foi possível capturar em ${label}`, {
           duration: 8000,
-          buttons: width > 3840 ? [{ label: 'Capturar 4K', onClick: () => setTimeout(() => runCapture({ width: 3840, height: 2160, cols: 2, rows: 2 }), 0) }] : [],
+          buttons: retry ? [{ label: 'Capturar 4K', onClick: () => setTimeout(() => runCapture({ width: 3840, height: 2160, cols: 2, rows: 2 }), 0) }] : [],
         });
       }
     } finally {
+      director.controls.enabled = true;
       capture = null;
+      onResize();
     }
   }
 
@@ -232,6 +257,7 @@ export async function startApp({ ui, caps }) {
   const onResize = () => {
     const w = container.clientWidth;
     const h = container.clientHeight;
+    if (pipeline.capturing) return; // re-synced when the capture ends
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     clearTimeout(resizeTimer);
@@ -241,12 +267,13 @@ export async function startApp({ ui, caps }) {
   const watchDpr = () => {
     const mq = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
     mq.addEventListener('change', () => {
-      pipeline.setQuality(prefs.quality);
+      if (!pipeline.capturing) pipeline.setQuality(prefs.quality);
       watchDpr();
     }, { once: true });
   };
   watchDpr();
   reducedMQ.addEventListener('change', () => {
+    if (typeof stored.reducedMotion === 'boolean') return; // explicit choice wins
     prefs.reducedMotion = reducedMQ.matches;
     pipeline.settings.reducedMotion = prefs.reducedMotion;
     director.setReducedMotion(prefs.reducedMotion);
@@ -357,7 +384,7 @@ export async function startApp({ ui, caps }) {
   if (!prefs.hintShown) {
     setTimeout(() => hud.toast('Arraste para explorar · H oculta a interface · ? atalhos', { duration: 7000 }), 2200);
     prefs.hintShown = true;
-    savePrefs(prefs);
+    remember('hintShown', true);
   }
 
   if (params.has('debug')) Object.assign(window, { __orbita: { pipeline, director, clock, hud }, __THREE: THREE });

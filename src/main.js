@@ -43,6 +43,9 @@ function probeWebGL2() {
 const caps = probeWebGL2();
 if (!caps) {
   ui.fail('WebGL2 indisponível — atualize o navegador e ative a aceleração por hardware.');
+} else if (!caps.halfFloat) {
+  // Every HDR target (scene, bloom, volume) needs float colour buffers.
+  ui.fail('Este dispositivo não oferece buffers de cor em ponto flutuante (HDR), necessários para a galáxia.');
 } else {
   ui.status('Gerando 320.000 estrelas…');
   import('./app.js')
